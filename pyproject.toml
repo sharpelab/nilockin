@@ -14,7 +14,7 @@ dependencies = [
 
 [dependency-groups]
 dev = ["ruff>=0.9", "ty>=0.0.1a0", "pytest>=8.0"]
-gui = ["PySide6-Essentials>=6.7"]
+gui = ["PySide6-Essentials>=6.7", "pyqtgraph>=0.13"]
 
 [tool.uv]
 default-groups = ["dev", "gui"]

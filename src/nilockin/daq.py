@@ -62,7 +62,6 @@ def create_ao_task(
     task.timing.cfg_samp_clk_timing(
         rate=sample_rate,
         sample_mode=AcquisitionType.CONTINUOUS,
-        samps_per_chan=samples_per_cycle,
     )
     # Regeneration: hardware loops the buffer indefinitely after one write.
     task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION

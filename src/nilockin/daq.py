@@ -10,6 +10,8 @@ def create_ai_task(
     device: str = "Dev1",
     channels: int = 1,
     sample_rate: float = 2000.0,
+    *,
+    sync_to_ao: bool = False,
 ) -> nidaqmx.Task:
     """Create and configure an analog input task.
 
@@ -17,6 +19,8 @@ def create_ai_task(
         device: NI device name (e.g. "Dev1", "ni6363").
         channels: Number of AI channels to configure (0 through channels-1).
         sample_rate: Per-channel sample rate in Hz.
+        sync_to_ao: If True, AI starts on the AO start trigger so both
+            tasks are phase-aligned from sample 0.
 
     Returns:
         Configured but not yet started nidaqmx.Task.
@@ -33,6 +37,8 @@ def create_ai_task(
         sample_mode=AcquisitionType.CONTINUOUS,
         samps_per_chan=int(sample_rate * 4),
     )
+    if sync_to_ao:
+        task.triggers.start_trigger.cfg_dig_edge_start_trigger(f"/{device}/ao/StartTrigger")  # ty: ignore[unresolved-attribute]
     return task
 
 

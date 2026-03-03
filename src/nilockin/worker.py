@@ -75,12 +75,16 @@ class AcquisitionWorker(QThread):
         if not self._dummy:
             from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
 
-            ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate)
-            if self._ao_amplitude > 0:
+            has_ao = self._ao_amplitude > 0
+            ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate, sync_to_ao=has_ao)
+            if has_ao:
                 ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
                 write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
-                ao_task.start()
+            # Start AI first — if synced, it arms and waits for AO's start trigger.
+            # Then AO start fires both simultaneously.
             ai_task.start()
+            if ao_task is not None:
+                ao_task.start()
 
         try:
             while self._running:
@@ -98,12 +102,14 @@ class AcquisitionWorker(QThread):
                             ao_task.close()
                             ao_task = None
 
-                        ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate)
-                        if self._ao_amplitude > 0:
+                        has_ao = self._ao_amplitude > 0
+                        ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate, sync_to_ao=has_ao)
+                        if has_ao:
                             ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
                             write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
-                            ao_task.start()
                         ai_task.start()
+                        if ao_task is not None:
+                            ao_task.start()
 
                 if self._dummy:
                     data = self._generate_dummy()

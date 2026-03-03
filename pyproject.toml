@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nilockin"
+version = "0.1.0"
+description = "Multi-channel software lock-in amplifier for NI USB-6363"
+requires-python = ">=3.13"
+dependencies = [
+    "numpy>=2.0",
+    "nidaqmx>=1.0",
+]
+
+[dependency-groups]
+dev = ["ruff>=0.9", "ty>=0.0.1a0", "pytest>=8.0"]
+gui = ["PySide6-Essentials>=6.7"]
+
+[tool.uv]
+default-groups = ["dev", "gui"]
+
+[project.gui-scripts]
+nilockin = "nilockin.app:main"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "SIM108",  # prefer explicit if/else over ternary
+    "SIM102",  # prefer readability over collapsed if
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

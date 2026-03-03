@@ -38,7 +38,9 @@ def create_ai_task(
         samps_per_chan=int(sample_rate * 4),
     )
     if sync_to_ao:
-        task.triggers.start_trigger.cfg_dig_edge_start_trigger(f"/{device}/ao/StartTrigger")  # ty: ignore[unresolved-attribute]
+        task.triggers.start_trigger.cfg_dig_edge_start_trig(
+            f"/{device}/ao/StartTrigger"
+        )
     return task
 
 

@@ -29,7 +29,14 @@ class AcquisitionWorker(QThread):
 
     result = Signal(object, float, float, float, float)
 
-    def __init__(self, freq: float, sample_rate: float, *, dummy: bool = False) -> None:
+    def __init__(
+        self,
+        freq: float,
+        sample_rate: float,
+        *,
+        dummy: bool = False,
+        ao_amplitude: float = 0.0,
+    ) -> None:
         super().__init__()
         self._dummy = dummy
         self._running = False
@@ -38,6 +45,7 @@ class AcquisitionWorker(QThread):
         # Current config — read by the worker loop, written by update_config
         self._freq = freq
         self._sample_rate = sample_rate
+        self._ao_amplitude = ao_amplitude
 
         # Built from config at the start of each loop (or on config change)
         self._buffer_size = 0
@@ -48,10 +56,11 @@ class AcquisitionWorker(QThread):
         # Dummy mode state
         self._dummy_phase = 0.0
 
-    def update_config(self, freq: float, sample_rate: float) -> None:
+    def update_config(self, freq: float, sample_rate: float, ao_amplitude: float) -> None:
         """Request a config change. Thread-safe — takes effect next cycle."""
         self._freq = freq
         self._sample_rate = sample_rate
+        self._ao_amplitude = ao_amplitude
         self._config_event.set()
 
     def stop(self) -> None:
@@ -60,33 +69,48 @@ class AcquisitionWorker(QThread):
 
     def run(self) -> None:
         self._running = True
-        task = None
+        ai_task = None
+        ao_task = None
 
         if not self._dummy:
-            from nilockin.daq import create_ai_task
+            from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
 
-            task = create_ai_task(channels=1, sample_rate=self._sample_rate)
-            task.start()
+            ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate)
+            if self._ao_amplitude > 0:
+                ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
+                write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
+                ao_task.start()
+            ai_task.start()
 
         try:
             while self._running:
                 if self._config_event.is_set():
                     self._config_event.clear()
                     self._rebuild_reference()
-                    if task is not None:
-                        task.stop()
-                        task.close()
-                        from nilockin.daq import create_ai_task
+                    if not self._dummy:
+                        from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
 
-                        task = create_ai_task(channels=1, sample_rate=self._sample_rate)
-                        task.start()
+                        if ai_task is not None:
+                            ai_task.stop()
+                            ai_task.close()
+                        if ao_task is not None:
+                            ao_task.stop()
+                            ao_task.close()
+                            ao_task = None
+
+                        ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate)
+                        if self._ao_amplitude > 0:
+                            ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
+                            write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
+                            ao_task.start()
+                        ai_task.start()
 
                 if self._dummy:
                     data = self._generate_dummy()
                     time.sleep(self._buffer_size / self._sample_rate)
                 else:
-                    assert task is not None
-                    raw = task.read(number_of_samples_per_channel=self._buffer_size)
+                    assert ai_task is not None
+                    raw = ai_task.read(number_of_samples_per_channel=self._buffer_size)
                     data = np.array(raw, dtype=np.float64)
 
                 x, y = demod(data, self._sin_ref, self._cos_ref)
@@ -94,9 +118,19 @@ class AcquisitionWorker(QThread):
                 p = math.degrees(math.atan2(y, x))
                 self.result.emit(data, x, y, r, p)
         finally:
-            if task is not None:
-                task.stop()
-                task.close()
+            if ao_task is not None:
+                # Zero the output before closing
+                from nilockin.daq import write_ao_sine
+
+                ao_task.stop()
+                write_ao_sine(ao_task, self._buffer_size, 0.0)
+                ao_task.start()
+                time.sleep(0.05)
+                ao_task.stop()
+                ao_task.close()
+            if ai_task is not None:
+                ai_task.stop()
+                ai_task.close()
 
     def _rebuild_reference(self) -> None:
         self._buffer_size = compute_buffer_size(self._freq, self._sample_rate)

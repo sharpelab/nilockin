@@ -2,7 +2,8 @@
 
 import nidaqmx
 import nidaqmx.constants
-from nidaqmx.constants import AcquisitionType, TerminalConfiguration
+import numpy as np
+from nidaqmx.constants import AcquisitionType, RegenerationMode, TerminalConfiguration
 
 
 def create_ai_task(
@@ -33,3 +34,50 @@ def create_ai_task(
         samps_per_chan=int(sample_rate * 4),
     )
     return task
+
+
+def create_ao_task(
+    device: str = "Dev1",
+    channel: int = 0,
+    sample_rate: float = 2000.0,
+    samples_per_cycle: int = 100,
+) -> nidaqmx.Task:
+    """Create an analog output task with regeneration (hardware looping).
+
+    Args:
+        device: NI device name.
+        channel: AO channel number (0-3 on the 6363).
+        sample_rate: Output sample rate in Hz.
+        samples_per_cycle: Number of samples in one waveform cycle.
+
+    Returns:
+        Configured but not yet started nidaqmx.Task.
+    """
+    task = nidaqmx.Task("nilockin_ao")
+    task.ao_channels.add_ao_voltage_chan(
+        f"{device}/ao{channel}",
+        min_val=-10.0,
+        max_val=10.0,
+    )
+    task.timing.cfg_samp_clk_timing(
+        rate=sample_rate,
+        sample_mode=AcquisitionType.CONTINUOUS,
+        samps_per_chan=samples_per_cycle,
+    )
+    # Regeneration: hardware loops the buffer indefinitely after one write.
+    task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION
+    return task
+
+
+def write_ao_sine(task: nidaqmx.Task, samples_per_cycle: int, amplitude: float) -> None:
+    """Write a single sine cycle to the AO task buffer.
+
+    Args:
+        task: A configured AO task (not yet started, or stopped).
+        samples_per_cycle: Number of samples in one period.
+        amplitude: Peak amplitude in volts (clipped to ±10V).
+    """
+    amplitude = float(np.clip(amplitude, -10.0, 10.0))
+    phase = 2.0 * np.pi * np.arange(samples_per_cycle) / samples_per_cycle
+    waveform = amplitude * np.sin(phase)
+    task.write(waveform.tolist(), auto_start=False)

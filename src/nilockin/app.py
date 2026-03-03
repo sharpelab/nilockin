@@ -38,7 +38,8 @@ class MainWindow(QMainWindow):
 
         freq = self._freq_spin.value()
         rate = self._rate_spin.value()
-        self._worker = AcquisitionWorker(freq, rate, dummy=dummy)
+        ao_amp = self._ao_amp_spin.value()
+        self._worker = AcquisitionWorker(freq, rate, dummy=dummy, ao_amplitude=ao_amp)
         self._worker.result.connect(self._on_result)
         self._update_status()
 
@@ -80,7 +81,8 @@ class MainWindow(QMainWindow):
     def _on_config_changed(self) -> None:
         freq = self._freq_spin.value()
         rate = self._rate_spin.value()
-        self._worker.update_config(freq, rate)
+        ao_amp = self._ao_amp_spin.value()
+        self._worker.update_config(freq, rate, ao_amp)
         self._x_hist.clear()
         self._y_hist.clear()
         self._r_hist.clear()
@@ -148,6 +150,16 @@ class MainWindow(QMainWindow):
         self._rate_spin.setKeyboardTracking(False)
         self._rate_spin.valueChanged.connect(self._on_config_changed)
         config_layout.addWidget(self._rate_spin)
+
+        config_layout.addWidget(QLabel("AO Amp (V):"))
+        self._ao_amp_spin = QDoubleSpinBox()
+        self._ao_amp_spin.setRange(0.0, 10.0)
+        self._ao_amp_spin.setDecimals(3)
+        self._ao_amp_spin.setValue(0.0)
+        self._ao_amp_spin.setSingleStep(0.1)
+        self._ao_amp_spin.setKeyboardTracking(False)
+        self._ao_amp_spin.valueChanged.connect(self._on_config_changed)
+        config_layout.addWidget(self._ao_amp_spin)
 
         controls.addWidget(config_box)
 

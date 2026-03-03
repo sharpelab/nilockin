@@ -62,6 +62,7 @@ def create_ao_task(
     task.timing.cfg_samp_clk_timing(
         rate=sample_rate,
         sample_mode=AcquisitionType.CONTINUOUS,
+        samps_per_chan=samples_per_cycle,
     )
     # Regeneration: hardware loops the buffer indefinitely after one write.
     task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION
@@ -79,4 +80,4 @@ def write_ao_sine(task: nidaqmx.Task, samples_per_cycle: int, amplitude: float) 
     amplitude = float(np.clip(amplitude, -10.0, 10.0))
     phase = 2.0 * np.pi * np.arange(samples_per_cycle) / samples_per_cycle
     waveform = amplitude * np.sin(phase)
-    task.write(waveform.tolist(), auto_start=False)
+    task.write(waveform, auto_start=False)

@@ -12,6 +12,7 @@ import time
 import numpy as np
 from PySide6.QtCore import QThread, Signal
 
+from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
 from nilockin.lockin import compute_buffer_size, demod, make_reference
 
 # Dummy mode: synthetic signal parameters
@@ -67,24 +68,39 @@ class AcquisitionWorker(QThread):
         """Signal the worker to stop after the current cycle."""
         self._running = False
 
+    def _create_tasks(self) -> tuple:
+        """Create and start AI (and optionally AO) tasks."""
+        has_ao = self._ao_amplitude > 0
+        ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate, sync_to_ao=has_ao)
+        ao_task = None
+        if has_ao:
+            ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
+            write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
+        ai_task.start()
+        if ao_task is not None:
+            ao_task.start()
+        return ai_task, ao_task
+
+    def _stop_tasks(self, ai_task: object, ao_task: object) -> None:
+        """Stop and close tasks, zeroing AO output."""
+        if ao_task is not None:
+            ao_task.stop()  # type: ignore[union-attr]
+            write_ao_sine(ao_task, self._buffer_size, 0.0)  # type: ignore[arg-type]
+            ao_task.start()  # type: ignore[union-attr]
+            time.sleep(0.05)
+            ao_task.stop()  # type: ignore[union-attr]
+            ao_task.close()  # type: ignore[union-attr]
+        if ai_task is not None:
+            ai_task.stop()  # type: ignore[union-attr]
+            ai_task.close()  # type: ignore[union-attr]
+
     def run(self) -> None:
         self._running = True
         ai_task = None
         ao_task = None
 
         if not self._dummy:
-            from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
-
-            has_ao = self._ao_amplitude > 0
-            ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate, sync_to_ao=has_ao)
-            if has_ao:
-                ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
-                write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
-            # Start AI first — if synced, it arms and waits for AO's start trigger.
-            # Then AO start fires both simultaneously.
-            ai_task.start()
-            if ao_task is not None:
-                ao_task.start()
+            ai_task, ao_task = self._create_tasks()
 
         try:
             while self._running:
@@ -92,24 +108,8 @@ class AcquisitionWorker(QThread):
                     self._config_event.clear()
                     self._rebuild_reference()
                     if not self._dummy:
-                        from nilockin.daq import create_ai_task, create_ao_task, write_ao_sine
-
-                        if ai_task is not None:
-                            ai_task.stop()
-                            ai_task.close()
-                        if ao_task is not None:
-                            ao_task.stop()
-                            ao_task.close()
-                            ao_task = None
-
-                        has_ao = self._ao_amplitude > 0
-                        ai_task = create_ai_task(channels=1, sample_rate=self._sample_rate, sync_to_ao=has_ao)
-                        if has_ao:
-                            ao_task = create_ao_task(sample_rate=self._sample_rate, samples_per_cycle=self._buffer_size)
-                            write_ao_sine(ao_task, self._buffer_size, self._ao_amplitude)
-                        ai_task.start()
-                        if ao_task is not None:
-                            ao_task.start()
+                        self._stop_tasks(ai_task, ao_task)
+                        ai_task, ao_task = self._create_tasks()
 
                 if self._dummy:
                     data = self._generate_dummy()
@@ -124,19 +124,7 @@ class AcquisitionWorker(QThread):
                 p = math.degrees(math.atan2(y, x))
                 self.result.emit(data, x, y, r, p)
         finally:
-            if ao_task is not None:
-                # Zero the output before closing
-                from nilockin.daq import write_ao_sine
-
-                ao_task.stop()
-                write_ao_sine(ao_task, self._buffer_size, 0.0)
-                ao_task.start()
-                time.sleep(0.05)
-                ao_task.stop()
-                ao_task.close()
-            if ai_task is not None:
-                ai_task.stop()
-                ai_task.close()
+            self._stop_tasks(ai_task, ao_task)
 
     def _rebuild_reference(self) -> None:
         self._buffer_size = compute_buffer_size(self._freq, self._sample_rate)
